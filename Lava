@@ -1207,6 +1207,27 @@ CollectorTab:CreateSection("Auto Coin")
 
 local autoCoinEnabled  = false
 local autoCoinThread   = nil
+local autoCoinScanThread = nil
+local activeCoinMap    = {}
+
+local function startCoinScan()
+    autoCoinScanThread = task.spawn(function()
+        while autoCoinEnabled do
+            local fresh = {}
+            for _, obj in pairs(workspace:GetChildren()) do
+                if obj.Name == "Coin" and obj:IsA("Model") and obj.Parent then
+                    local uuid = obj:GetAttribute("UUID")
+                    local part = obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart
+                    if uuid and part then
+                        fresh[uuid] = { obj = obj, part = part, pos = part.Position }
+                    end
+                end
+            end
+            activeCoinMap = fresh
+            task.wait(0.1)
+        end
+    end)
+end
 
 CollectorTab:CreateToggle({
     Name = "Auto Collect Coins",
@@ -1216,33 +1237,29 @@ CollectorTab:CreateToggle({
         autoCoinEnabled = Value
         if Value then
             hideLava()
+            activeCoinMap = {}
+            startCoinScan()
             autoCoinThread = task.spawn(function()
                 while autoCoinEnabled do
-                    local coins = {}
-                    for _, obj in pairs(workspace:GetChildren()) do
-                        if obj.Name == "Coin" and obj:IsA("Model") then
-                            table.insert(coins, obj)
-                        end
-                    end
-                    if #coins == 0 then
-                        task.wait(0.5)
-                        continue
-                    end
                     local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                     if not root then task.wait(0.5) continue end
-                    for _, obj in ipairs(coins) do
+                    local snapshot = activeCoinMap
+                    local hasAny = false
+                    for uuid, data in pairs(snapshot) do
+                        hasAny = true
                         if not autoCoinEnabled then break end
-                        if not obj or not obj.Parent then continue end
-                        local part = obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart
-                        if not part then continue end
-                        root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-                        task.wait(0.5)
+                        if not data.obj or not data.obj.Parent then continue end
+                        if not data.part or not data.part.Parent then continue end
+                        root.CFrame = CFrame.new(data.part.Position + Vector3.new(0, 3, 0))
+                        task.wait(0.8)
                     end
-                    task.wait(0.2)
+                    if not hasAny then task.wait(0.5) end
                 end
             end)
         else
             if autoCoinThread then task.cancel(autoCoinThread) autoCoinThread = nil end
+            if autoCoinScanThread then task.cancel(autoCoinScanThread) autoCoinScanThread = nil end
+            activeCoinMap = {}
         end
     end,
 })
